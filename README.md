@@ -318,6 +318,10 @@ c <- r_curve_summary  %>%
 c
 #ggsave("plot_papper/rarefaction_curve.png", c, width = 8, height = 4)
 
+
+
+
+
 #Barplot de Alfa diversidad--------------------------------------------------------------------
 
 #ASV POR PHYLUM------------------
