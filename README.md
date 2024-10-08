@@ -1,5 +1,5 @@
 # Repositorio_Grupo_5
-
+```ruby
 #Se descargaron los archivos .txt "tax_table", "otu_table" y "df_table" (ubicados en github javi) y se abrieron en R como data.frames
 #Se descargó el archivo "ps_arms.R" (ubicado en github javi). 
 
@@ -317,3 +317,4 @@ c <- r_curve_summary  %>%
         legend.title = element_blank())
 c
 #ggsave("plot_papper/rarefaction_curve.png", c, width = 8, height = 4)
+``` 
