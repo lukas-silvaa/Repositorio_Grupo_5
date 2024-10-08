@@ -40,27 +40,44 @@ data <- function(file_df) {
 setwd("Poner ubicación donde se encuentran los archivos .txt")
 project_path <- "Poner ubicación donde se encuentran los archivos .txt"
 project_path
-#abrir los archivos (también se pueden abrir vía import dataset en el enviroment -> Heading "yes")
+
+
+#Abrir los archivos (también se pueden abrir vía import dataset en el enviroment -> Heading "yes")--------------------
+
 asv_1 <- read.table("otu_table.txt", header = TRUE, sep = "\t", row.names = 1)
 tax_1 <- read.table("tax_table.txt", header = TRUE, sep = "\t", row.names = 1)
 tax_1[tax_1 == ""] <- "Unassigned"
 df <- read.table("df_table.txt", header = TRUE, sep = "\t", row.names = 1)
 
-otu_ps <- otu(asv_1)
-tax_ps <- taxa(tax_1)
-data_ps <- data(df)
+df <- df %>% 
+mutate(factor =  paste(site, ocean_depth, sep = "_")) %>%
+mutate(factor_r =  paste(site, ocean_depth, replica, sep = "_"))
+
+
+#Crear objeto phyloseq----------------------------------------
+
+otu <- as.matrix(asv_1)
+otu_ps <- otu_table(otu, taxa_are_rows = TRUE)
+
+taxa <- as.matrix(tax_1)
+tax_ps <- tax_table(taxa)
+
+df <- data.frame(df)
+data_ps <- sample_data(df)
+
 ps <- phyloseq(otu_ps, tax_ps, data_ps)
 ps <- subset_samples(ps, study == "arms")
 
+
 #PASO 2: Descontaminar -> Remover contaminantes basados en control negativo  
 
+#Preparación de data
 df <- as.data.frame(sample_data(ps))
 df$LibrarySize <- sample_sums(ps)
 df <- df[order(df$LibrarySize),]
 df$Index <- seq(nrow(df))
 
 #Visualizar 
-
 contam <- ggplot(data = df, aes(x = sample_name, y = LibrarySize,
         color = factor)) + geom_point() + theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5, size = 6))
@@ -74,17 +91,18 @@ sample_data(ps)$is.neg <- sample_data(ps)$type == "control"
 contamdf.prev05 <- isContaminant(ps, method="prevalence", neg="is.neg", threshold=0.5)
 filter(contamdf.prev05, contaminant == TRUE)
 
-#selection seq contaminants
+#seleccción de "seq contaminants"
 contam <- head(which(contamdf.prev05$contaminant))
 contam <- rownames(contamdf.prev05[c(contam),])
 
-#remov contaminants
+#remover contaminantes
 otu_table(ps) <- otu_table(ps)[!(row.names(otu_table(ps)) %in% contam),]
 ps <- subset_samples(ps, type != "control")
 ps <- prune_taxa(taxa_sums(ps) > 0, ps)
 
-#AHORA EN  R
+#AHORA EN  R---------------------------------------------------------------
 #Limpiar datos de especies que no son invertebrados marinos --> Data clean
+
 ps = subset_taxa(ps, Specie !="Eurytemora foveola")#AGUA DULCE
 ps = subset_taxa(ps, Specie !="Eurytemora herdmani")#AGUA DULCE
 ps = subset_taxa(ps, Genus !="Fridericia")
@@ -135,8 +153,8 @@ ps = subset_taxa(ps, Phylum !="Discosea")
 ps = subset_taxa(ps, Phylum !="Bacillariophyta")
 ps = subset_taxa(ps, Kingdom !="Bacteria")
 
-#Contar número de secuencias, número de taxas 
 
+#Contar número de secuencias, número de taxas 
 ps <- prune_taxa(taxa_sums(ps) > 0,
                  ps)
 
@@ -153,7 +171,6 @@ count_know <- ps %>%
 
 
 #Borrar los primers con 0 lecturas
-
 clean_zero_reads <- function(ps, taxonomic_level) {
   tax_glom_ps <- tax_glom(ps, taxonomic_level, NArm = FALSE) #agrupa por taxonomic leves eg. genus #nolint
   clean_zero_ps <- prune_taxa(taxa_sums(tax_glom_ps) > 0,
@@ -163,7 +180,7 @@ clean_zero_reads <- function(ps, taxonomic_level) {
 ps <- clean_zero_reads(ps, "Specie")
 
 
-#MERGE, juntar sub-replicas según profundidad
+#MERGE, juntar sub-replicas según profundidad --------------------------------------
 
 ps_sfs <- merge_samples(ps, group = "factor_r")
 df_sfs <- data.frame(sample_data(ps_sfs))
@@ -175,6 +192,8 @@ df_sfs <- df_sfs  %>%
          factor_r = paste(site, ocean_depth, replica, sep = "_")) %>%
   dplyr::select(study, site, ocean_depth, factor, factor_r)
 sample_data(ps_sfs) <- df_sfs
+
+otu_table(ps_sfs) <- t(otu_table(ps_sfs))
 
 ps_sfs <- clean_zero_reads(ps_sfs, "Specie")
 
@@ -192,6 +211,9 @@ rarefaction <- function(clean_zero_ps) {
   return(rarefied_ps)
 }
 
+sample_sums <- sample_sums(ps_sfs) #nolint
+which.min(sample_sums)
+r_ps_sfs <- rarefaction(ps_sfs)
 
 ##CURVAS DE RAREFACCION--------------------------------
 
@@ -199,39 +221,39 @@ calculate_rarefaction_curves2 <- function(psdata, measures, depths) {
   require("plyr") # ldply
   require("reshape2") # melt
   
-  estimate_rarified_richness <- function(psdata, measures, depth) {
+estimate_rarified_richness <- function(psdata, measures, depth) {
     if(max(sample_sums(psdata)) < depth) return()
     psdata <- prune_samples(sample_sums(psdata) >= depth, psdata)
     
-    rarified_psdata <- rarefy_even_depth(psdata, depth, verbose = FALSE)
+  rarified_psdata <- rarefy_even_depth(psdata, depth, verbose = FALSE)
     
-    alpha_diversity <- estimate_richness(rarified_psdata, measures = measures)
+  alpha_diversity <- estimate_richness(rarified_psdata, measures = measures)
     
-    # Calcular equitabilidad (evenness)
-    evenness_values <- diversity(t(rarified_psdata@otu_table)) / log(specnumber(t(rarified_psdata@otu_table)))
+#Calcular equitabilidad (evenness)
+evenness_values <- diversity(t(rarified_psdata@otu_table)) / log(specnumber(t(rarified_psdata@otu_table)))
+
+#Añadir la equitabilidad a los resultados
+evenness_df <- data.frame(Sample = rownames(alpha_diversity), Evenness = evenness_values)
+alpha_diversity <- cbind(alpha_diversity, Evenness = evenness_values)
     
-    # Añadir la equitabilidad a los resultados
-    evenness_df <- data.frame(Sample = rownames(alpha_diversity), Evenness = evenness_values)
-    alpha_diversity <- cbind(alpha_diversity, Evenness = evenness_values)
-    
-    # Convertir los resultados a formato largo (melted)
-    molten_alpha_diversity <- melt(as.matrix(alpha_diversity),
+#Convertir los resultados a formato largo (melted)
+molten_alpha_diversity <- melt(as.matrix(alpha_diversity),
                                    varnames = c('Sample', 'Measure'),
                                    value.name = 'Alpha_diversity')
     
-    molten_alpha_diversity
+  molten_alpha_diversity
   }
   
-  names(depths) <- depths # Esto habilita la adición automática de la profundidad al output por ldply
-  rarefaction_curve_data <- ldply(depths, estimate_rarified_richness, psdata = psdata, measures = measures, .id = 'Depth', .progress = ifelse(interactive(), 'text', 'none'))
+names(depths) <- depths # Esto habilita la adición automática de la profundidad al output por ldply
+rarefaction_curve_data <- ldply(depths, estimate_rarified_richness, psdata = psdata, measures = measures, .id = 'Depth', .progress = ifelse(interactive(), 'text', 'none'))
   
-  # Convertir Depth de factor a numérico
+#Convertir Depth de factor a numérico
   rarefaction_curve_data$Depth <- as.numeric(levels(rarefaction_curve_data$Depth))[rarefaction_curve_data$Depth]
   
   rarefaction_curve_data
 }
 
-# Resumen de los resultados obtenidos en las curvas de rarefacción
+#Resumen de los resultados obtenidos en las curvas de rarefacción
 curve_summary_verbose <- function(rarefied_ps, r_curve_data) {
   r_curve_data_summary <- ddply(r_curve_data,
                                 c("Depth", "Sample", "Measure"),
@@ -249,7 +271,7 @@ r_curve2 <- calculate_rarefaction_curves2(r_ps_sfs,
                                         c("Observed", "Shannon", "Chao1", "Evenness"),
                                         rep(c(1:150 * 100), each = 5))
 
-# Data summary curve rarefy
+#Data summary curve rarefy
 r_curve_summary <- curve_summary_verbose(r_ps_sfs, r_curve2)
 
 
